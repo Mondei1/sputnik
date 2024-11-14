@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Sputnik.Proxy.Crypto;
+using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
@@ -11,13 +12,15 @@ public class TcpServer
 {
     private TcpListener _listener;
     private OpenRouter _openRouter;
+    private Obfuscator _obfuscator;
     private bool _isRunning;
     private readonly ConcurrentDictionary<TcpClient, Task> _clients = new ConcurrentDictionary<TcpClient, Task>();
 
     public TcpServer(string ipAddress, int port)
     {
-        _listener = new TcpListener(IPAddress.Parse(ipAddress), port);
-        _openRouter = new OpenRouter("mistralai/mixtral-8x7b-instruct");
+        _listener = new(IPAddress.Parse(ipAddress), port);
+        _openRouter = new("mistralai/mixtral-8x7b-instruct");
+        _obfuscator = new("aZ0mnhg4GslstQHZc5Hz4KBqNOqZqF4H");
     }
 
     public void Start()
@@ -52,7 +55,7 @@ public class TcpServer
     private async Task HandleClientAsync(TcpClient client)
     {
         NetworkStream stream = client.GetStream();
-        byte[] buffer = new byte[8192];
+        byte[] buffer = new byte[256];
 
         try
         {
@@ -73,7 +76,11 @@ public class TcpServer
                 await foreach (var str in _openRouter.Prompt(message))
                 {
                     byte[] response = Encoding.ASCII.GetBytes(str);
-                    await stream.WriteAsync(response, 0, response.Length);
+
+                    // Obfuscate our response.
+                    byte[] obfus = _obfuscator.Obfuscate(response);
+
+                    await stream.WriteAsync(obfus, 0, obfus.Length);
                 }
                 DateTime endTime = DateTime.Now;
                 TimeSpan duration = endTime - startTime;
@@ -86,7 +93,7 @@ public class TcpServer
                 Console.WriteLine($"] Completed request in {duration.ToString(@"fff")}ms | {_openRouter.LastUsage.TotalTokens} tokens processed => ~{cost.Item1 + cost.Item2} €");
 
                 // Send null-terminator to end stream
-                await stream.WriteAsync([((byte)'E'), ((byte)'O'), ((byte)'F')], 0, 3);
+                await stream.WriteAsync(_obfuscator.Obfuscate([((byte)'E'), ((byte)'O'), ((byte)'F')]), 0, 3);
 
             }
         }

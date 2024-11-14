@@ -13,6 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Sputnik.Proxy.Crypto\Sputnik.Proxy.Crypto.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="Prompts\Conversation.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

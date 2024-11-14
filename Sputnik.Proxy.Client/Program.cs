@@ -1,4 +1,5 @@
-﻿using System.Net.Sockets;
+﻿using Sputnik.Proxy.Crypto;
+using System.Net.Sockets;
 using System.Text;
 
 namespace Sputnik.Proxy.Client;
@@ -7,12 +8,15 @@ internal class Program
 {
     static void Main(string[] args)
     {
-        TcpClient client = new TcpClient();
+        TcpClient client = new();
+        Obfuscator obfuscator = new("aZ0mnhg4GslstQHZc5Hz4KBqNOqZqF4H");
 
         NetworkStream stream;
         try
         {
             client.Connect("127.0.0.1", 9999);
+            client.ReceiveBufferSize = 256;
+            client.SendBufferSize = 256;
             stream = client.GetStream();
         }
         catch (Exception e)
@@ -41,8 +45,10 @@ internal class Program
 
             while (true)
             {
-                byte[] receivedData = new byte[client.ReceiveBufferSize];
-                int bytesRead = stream.Read(receivedData, 0, receivedData.Length);
+                byte[] receivedObfuscatedData = new byte[client.ReceiveBufferSize];
+                int bytesRead = stream.Read(receivedObfuscatedData, 0, receivedObfuscatedData.Length);
+
+                byte[] receivedData = obfuscator.Deobfuscate(receivedObfuscatedData);
 
                 for (int i = 0; i < client.ReceiveBufferSize - 2; i++)
                 {
