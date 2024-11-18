@@ -13,11 +13,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Sputnik.Proxy.Crypto\Sputnik.Proxy.Crypto.csproj" />
+    <ProjectReference Include="..\Sputnik.Proxy.Crypto\Sputnik.Proxy.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Prompts\Conversation.txt">
+    <None Update="Prompts\SystemPrompt.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Prompts\Rude.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Prompts\Kind.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

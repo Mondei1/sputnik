@@ -1,5 +1,4 @@
-﻿using Sputnik.Proxy.Crypto;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
@@ -10,17 +9,24 @@ namespace Sputnik.Proxy;
 
 public class TcpServer
 {
+    /// <summary>
+    /// This key is required to authenticate against the proxy. Not doing so would result in my credit card being
+    /// billed to personal insolvency.
+    /// </summary>
+    private static readonly byte[] PROXY_KEY = Encoding.ASCII.GetBytes("T6pSSaSjXU6uXJqMtrYSmyptAALqGmtk");
+
     private TcpListener _listener;
     private OpenRouter _openRouter;
-    private Obfuscator _obfuscator;
     private bool _isRunning;
-    private readonly ConcurrentDictionary<TcpClient, Task> _clients = new ConcurrentDictionary<TcpClient, Task>();
+
+    private readonly ConcurrentDictionary<TcpClient, Task> _clients = new();
+    private readonly ConcurrentDictionary<TcpClient, List<GeneratedResponse>> _context = new();
+    private readonly ConcurrentDictionary<TcpClient, string> _ids = new();
 
     public TcpServer(string ipAddress, int port)
     {
         _listener = new(IPAddress.Parse(ipAddress), port);
-        _openRouter = new("mistralai/mixtral-8x7b-instruct");
-        _obfuscator = new("aZ0mnhg4GslstQHZc5Hz4KBqNOqZqF4H");
+        _openRouter = new("x-ai/grok-beta");
     }
 
     public void Start()
@@ -39,7 +45,48 @@ public class TcpServer
             try
             {
                 var client = await _listener.AcceptTcpClientAsync();
-                Console.WriteLine("Client connected...");
+
+                byte[] sentKey = new byte[PROXY_KEY.Length];
+
+                try
+                {
+                    await client.GetStream().ReadExactlyAsync(sentKey, 0, 32).AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+                    if (sentKey.SequenceEqual(PROXY_KEY))
+                    {
+                        // Tell client to move on.
+                        await client.GetStream().WriteAsync([1], 0, 1);
+                    }
+                    else
+                    {
+                        Logging.LogDebug($"Client {client.Client.RemoteEndPoint} submitted invalid key. Close ...");
+                        client.Close();
+
+                        continue;
+                    }
+                }
+                catch (TimeoutException)
+                {
+                    Logging.LogDebug($"Client {client.Client.RemoteEndPoint} failed to authenticate in time. Close ...");
+                    client.Close();
+
+                    continue;
+                }
+
+                string newGuid = Guid.NewGuid().ToString();
+                _ids.AddOrUpdate(client, newGuid, (key, oldValue) => newGuid);
+
+                EndPoint? endpoint = client.Client.RemoteEndPoint as IPEndPoint;
+                Logging.LogConnection($"Client {endpoint} (id: {newGuid}) connected.");
+
+                if (_context.TryAdd(client, new()))
+                {
+                    Logging.LogDebug($"Created new context for {newGuid}");
+                }
+                else
+                {
+                    Logging.LogWarn($"Context already found for {newGuid}");
+                }
 
                 // Handle each client in a separate task
                 var clientTask = HandleClientAsync(client);
@@ -64,36 +111,49 @@ public class TcpServer
                 int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
                 if (bytesRead == 0) break; // Client disconnected
 
+                if (!_ids.TryGetValue(client, out string? clientId))
+                {
+                    // Unknown client, abort.
+                    break;
+                }
+
+                // Parse metadata
+                int talkingStyle = buffer[0];
+
                 // Convert data received from the client
                 string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-                Console.Write("[");
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.Write("Req");
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine($"] {message}");
+                Logging.LogReqest($"Received user prompt of {message.Length} characters.");
+
+                if (!_context.TryGetValue(client, out List<GeneratedResponse> context))
+                {
+                    Logging.LogWarn($"Failed to retrieve context for {clientId}. Create new context ...");
+
+                    context = new();
+                    _context.TryAdd(client, context);
+                }
 
                 DateTime startTime = DateTime.Now;
-                await foreach (var str in _openRouter.Prompt(message))
+                string generatedResponse = "";
+
+                await foreach (string str in _openRouter.Prompt((TalkingStyle)talkingStyle, message, context))
                 {
+                    generatedResponse += str;
                     byte[] response = Encoding.ASCII.GetBytes(str);
 
-                    // Obfuscate our response.
-                    byte[] obfus = _obfuscator.Obfuscate(response);
-
-                    await stream.WriteAsync(obfus, 0, obfus.Length);
+                    await stream.WriteAsync(response, 0, response.Length);
                 }
                 DateTime endTime = DateTime.Now;
                 TimeSpan duration = endTime - startTime;
 
                 var cost = _openRouter.CalculatePrice();
-                Console.Write("[");
-                Console.ForegroundColor = ConsoleColor.Blue;
-                Console.Write("Res");
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine($"] Completed request in {duration.ToString(@"fff")}ms | {_openRouter.LastUsage.TotalTokens} tokens processed => ~{cost.Item1 + cost.Item2} €");
+
+                Logging.LogResponse(($"Completed request in {duration.ToString(@"s\.fff")}s | {_openRouter.LastUsage.TotalTokens} tokens processed => ~{cost.Item1 + cost.Item2} €"));
+
+                context.Add(new() { UserPrompt = message, Response = generatedResponse });
+                Logging.LogDebug($"Add {generatedResponse.Length + message.Length} characters to context.");
 
                 // Send null-terminator to end stream
-                await stream.WriteAsync(_obfuscator.Obfuscate([((byte)'E'), ((byte)'O'), ((byte)'F')]), 0, 3);
+                await stream.WriteAsync([((byte)'E'), ((byte)'O'), ((byte)'F')], 0, 3);
 
             }
         }
@@ -105,7 +165,12 @@ public class TcpServer
         {
             client.Close();
             _clients.TryRemove(client, out _);
-            Console.WriteLine("Client disconnected...");
+            _context.TryRemove(client, out _);
+
+            _ids.TryGetValue(client, out string id);
+            Logging.LogConnection($"Client {id ?? "unknown"} disconnected.");
+
+            _ids.TryRemove(client, out _);
         }
     }
 
