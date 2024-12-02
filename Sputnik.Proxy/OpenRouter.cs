@@ -8,27 +8,27 @@ namespace Sputnik.Proxy;
 public enum TalkingStyle
 {
     Kind = 1,
-    Rude = 2
+    Mixed = 2,
+    Rude = 3,
+    Raw = 4,
+    Calc = 5
 }
 
 internal class OpenRouter
 {
     private static readonly HttpClient client = new HttpClient();
 
-    public string ModelId { get; set; }
-
     public ResponseUsage LastUsage { get; private set; }
 
-    public OpenRouter(string modelId)
+    public OpenRouter()
     {
-        ModelId = modelId;
     }
 
     /// <summary>
     /// Calculates price of last prompt based on the amount of used tokens and the current price.
     /// </summary>
     /// <returns>(Input price, Output price); Both can be summed together for the final price.</returns>
-    public (decimal, decimal) CalculatePrice()
+    public (decimal, decimal) CalculatePrice(string model)
     {
         (decimal, decimal) result = (0, 0);
 
@@ -50,14 +50,14 @@ internal class OpenRouter
             string rawJson = response.Content.ReadAsStringAsync().Result;
             JObject json = JObject.Parse(rawJson);
 
-            JToken? model = json.SelectToken($"$.data[?(@.id == '{ModelId}')]");
-            if (model == null)
+            JToken? fetchedModel = json.SelectToken($"$.data[?(@.id == '{model}')]");
+            if (fetchedModel == null)
             {
                 Console.WriteLine("Failed to fetch models.");
                 return result;
             }
 
-            ResponsePricing pricing = JsonConvert.DeserializeObject<ResponsePricing>(model["pricing"]!.ToString())!;
+            ResponsePricing pricing = JsonConvert.DeserializeObject<ResponsePricing>(fetchedModel["pricing"]!.ToString())!;
             decimal promptCost = decimal.Parse(pricing.prompt, CultureInfo.InvariantCulture);
             decimal generationCost = decimal.Parse(pricing.completion, CultureInfo.InvariantCulture);
 
@@ -75,33 +75,65 @@ internal class OpenRouter
         return result;
     }
 
+    public string GetModelByStyle(TalkingStyle style)
+    {
+        return style switch
+        {
+            TalkingStyle.Kind => "mistralai/mistral-large-2411",
+            TalkingStyle.Mixed => "mistralai/mistral-nemo",
+            TalkingStyle.Rude => "mistralai/mistral-nemo",
+            TalkingStyle.Calc => "anthropic/claude-3.5-sonnet",
+            TalkingStyle.Raw => "anthropic/claude-3.5-haiku",
+            _ => "mistralai/mistral-nemo"
+        };
+    }
+
     public async IAsyncEnumerable<string> Prompt(TalkingStyle style, string prompt, List<GeneratedResponse>? prevContext)
     {
-        string systemPrompt = File.ReadAllText("Prompts\\SystemPrompt.txt")
-            .Replace(Environment.NewLine, " ")
-            .Replace("\"", "\\\"");
-
-        string kindStyle = File.ReadAllText("Prompts\\Kind.txt")
-            .Replace(Environment.NewLine, " ")
-            .Replace("\"", "\\\"");
-
-        string rudeStyle = File.ReadAllText("Prompts\\Rude.txt")
+        string systemPrompt = File.ReadAllText($"Prompts{Path.DirectorySeparatorChar}SystemPrompt.txt")
             .Replace(Environment.NewLine, " ")
             .Replace("\"", "\\\"");
 
         switch (style)
         {
             case TalkingStyle.Kind:
+                string kindStyle = File.ReadAllText($"Prompts{Path.DirectorySeparatorChar}Kind.txt")
+                    .Replace(Environment.NewLine, " ")
+                    .Replace("\"", "\\\"");
+
                 systemPrompt = systemPrompt.Replace("%style%", kindStyle);
                 break;
+            case TalkingStyle.Mixed:
+                string mixedStyle = File.ReadAllText($"Prompts{Path.DirectorySeparatorChar}Mixed.txt")
+                    .Replace(Environment.NewLine, " ")
+                    .Replace("\"", "\\\"");
+                systemPrompt = systemPrompt.Replace("%style%", mixedStyle);
+                break;
             case TalkingStyle.Rude:
+                string rudeStyle = File.ReadAllText($"Prompts{Path.DirectorySeparatorChar}Rude.txt")
+                    .Replace(Environment.NewLine, " ")
+                    .Replace("\"", "\\\"");
                 systemPrompt = systemPrompt.Replace("%style%", rudeStyle);
+                break;
+            case TalkingStyle.Raw:
+                systemPrompt = "";
+                break;
+            case TalkingStyle.Calc:
+                string calcStyle = File.ReadAllText($"Prompts{Path.DirectorySeparatorChar}Calculator.txt")
+                    .Replace(Environment.NewLine, " ")
+                    .Replace("\"", "\\\"");
+                systemPrompt = systemPrompt.Replace("%style%", calcStyle);
                 break;
         }
 
         string jsonContext = string.Empty;
 
-        if (prevContext != null)
+        /*
+         * Build conversation dialog.
+         * Not required for raw as it meant for smart command and is a "one-shot" thing.
+         * Not required for calc as it's not a conversation and each prompt is self contained.
+         */
+        if ((style != TalkingStyle.Raw && style != TalkingStyle.Calc) && prevContext != null)
         {
             for (int i = 0; i < prevContext.Count; i++)
             {
@@ -109,10 +141,17 @@ internal class OpenRouter
             }
         }
 
-        string jsonContent = "{\"stream\": true, \"max_tokens\": 4096, \"model\":\"" + ModelId + "\",\"messages\":[" +
+        // Pick the correct LLM model for each style.
+        string model = GetModelByStyle(style);
+
+
+        string jsonContent = "{\"stream\": true, \"max_tokens\": 4096, \"temperature\": 0.7, \"model\":\"" + model + "\",\"messages\":[" +
                 "{\"role\":\"system\",\"content\":" + JsonConvert.ToString(systemPrompt) + "}," +
                 jsonContext +
                 "{\"role\":\"user\",\"content\":" + JsonConvert.ToString(prompt) + "}]}";
+
+        //Logging.LogDebug($"Final request (style: {style}): {jsonContent}");
+        Logging.LogDebug($"Forward: \"{JsonConvert.DeserializeObject(jsonContent).ToString()}\"");
 
         StringContent content = new StringContent(
             jsonContent,
@@ -148,6 +187,7 @@ internal class OpenRouter
         using (var stream = await response.Content.ReadAsStreamAsync())
         using (var reader = new StreamReader(stream))
         {
+            bool firstToken = true;
             while (!reader.EndOfStream)
             {
                 string line = await reader.ReadLineAsync();
@@ -173,10 +213,25 @@ internal class OpenRouter
 
                         if (chatResponse["usage"] != null)
                         {
-                            LastUsage = JsonConvert.DeserializeObject<ResponseUsage>(chatResponse["usage"].ToString());
+                            LastUsage = JsonConvert.DeserializeObject<ResponseUsage>(chatResponse["usage"]!.ToString())!;
                         }
 
-                        yield return (string)chatResponse["choices"][0]["delta"]["content"];
+                        string token = (string)chatResponse?["choices"]?[0]?["delta"]?["content"];
+
+                        if (token == null)
+                        {
+                            yield return string.Empty;
+                        }
+
+                        // Some LLMs put spaces in front of their responses (looking at you Mistral Nemo). So we trim
+                        // the first returned token at the beginning.
+                        if (firstToken)
+                        {
+                            token = token.TrimStart();
+                            firstToken = false;
+                        }
+
+                        yield return token;
                     }
                 }
             }

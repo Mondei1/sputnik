@@ -15,7 +15,7 @@ namespace Sputnik.Proxy
         public string Id { get; set; }
 
         [JsonProperty("choices")]
-        public List<IChoice> Choices { get; set; } // IChoice for polymorphic deserialization
+        public List<IChoice> Choices { get; set; }
 
         [JsonProperty("created")]
         public long Created { get; set; }
@@ -24,7 +24,7 @@ namespace Sputnik.Proxy
         public string Model { get; set; }
 
         [JsonProperty("object")]
-        public string Object { get; set; } // "chat.completion" | "chat.completion.chunk"
+        public string Object { get; set; }
 
         [JsonProperty("system_fingerprint", NullValueHandling = NullValueHandling.Ignore)]
         public string SystemFingerprint { get; set; }
@@ -140,7 +140,7 @@ namespace Sputnik.Proxy
         public string Name { get; set; }
 
         [JsonProperty("arguments")]
-        public string Arguments { get; set; } // JSON format arguments
+        public string Arguments { get; set; }
     }
 
     public class ToolCall
@@ -149,7 +149,7 @@ namespace Sputnik.Proxy
         public string Id { get; set; }
 
         [JsonProperty("type")]
-        public string Type { get; set; } // "function"
+        public string Type { get; set; }
 
         [JsonProperty("function")]
         public FunctionCall Function { get; set; }

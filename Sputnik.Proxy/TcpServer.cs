@@ -26,7 +26,7 @@ public class TcpServer
     public TcpServer(string ipAddress, int port)
     {
         _listener = new(IPAddress.Parse(ipAddress), port);
-        _openRouter = new("x-ai/grok-beta");
+        _openRouter = new();
     }
 
     public void Start()
@@ -50,7 +50,7 @@ public class TcpServer
 
                 try
                 {
-                    await client.GetStream().ReadExactlyAsync(sentKey, 0, 32).AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+                    await client.GetStream().ReadExactlyAsync(sentKey, 0, 32).AsTask().WaitAsync(TimeSpan.FromMilliseconds(342));
 
                     if (sentKey.SequenceEqual(PROXY_KEY))
                     {
@@ -62,7 +62,7 @@ public class TcpServer
                         Logging.LogDebug($"Client {client.Client.RemoteEndPoint} submitted invalid key. Close ...");
                         client.Close();
 
-                        continue;
+                        break;
                     }
                 }
                 catch (TimeoutException)
@@ -70,7 +70,7 @@ public class TcpServer
                     Logging.LogDebug($"Client {client.Client.RemoteEndPoint} failed to authenticate in time. Close ...");
                     client.Close();
 
-                    continue;
+                    break;
                 }
 
                 string newGuid = Guid.NewGuid().ToString();
@@ -102,7 +102,7 @@ public class TcpServer
     private async Task HandleClientAsync(TcpClient client)
     {
         NetworkStream stream = client.GetStream();
-        byte[] buffer = new byte[256];
+        byte[] buffer = new byte[8096];
 
         try
         {
@@ -137,15 +137,23 @@ public class TcpServer
 
                 await foreach (string str in _openRouter.Prompt((TalkingStyle)talkingStyle, message, context))
                 {
-                    generatedResponse += str;
-                    byte[] response = Encoding.ASCII.GetBytes(str);
+                    string str1 = str
+                        .Replace("ä", "ae")
+                        .Replace("Ä", "Ae")
+                        .Replace("ö", "oe")
+                        .Replace("Ö", "Oe")
+                        .Replace("ü", "ue")
+                        .Replace("Ü", "Ue")
+                        .Replace("ß", "ss");
+                    generatedResponse += str1;
+                    byte[] response = Encoding.ASCII.GetBytes(str1);
 
                     await stream.WriteAsync(response, 0, response.Length);
                 }
                 DateTime endTime = DateTime.Now;
                 TimeSpan duration = endTime - startTime;
 
-                var cost = _openRouter.CalculatePrice();
+                var cost = _openRouter.CalculatePrice(_openRouter.GetModelByStyle((TalkingStyle)talkingStyle));
 
                 Logging.LogResponse(($"Completed request in {duration.ToString(@"s\.fff")}s | {_openRouter.LastUsage.TotalTokens} tokens processed => ~{cost.Item1 + cost.Item2} €"));
 
