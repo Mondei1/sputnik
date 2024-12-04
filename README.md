@@ -19,6 +19,7 @@ keeping no logs themselves (hopefully 🙏).
 This project is not intented to be hosted by anyone and is only used during the small presentation period of Venera.
 If you still want to host it, here is how I do it:
 - Clone this repository.
+- Rename `Sputnik.Proxy/.env.template` to `.env` and put in your own OpenRouter API key and generate a 32-byte PSK.
 - Open the project solution in Visual Studio 2022.
 - Publish as self-contained project and choose `linux-x64` as target.
 - Zip the contents of the export & upload to your server.
