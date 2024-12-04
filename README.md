@@ -1,6 +1,6 @@
 # Sputnik proxy
 This project is directly related to [Venera](https://github.com/ebsksjk/Venera), a operating system developed with the
-[Cosmos](https://www.gocosmos.org/) framework.
+[Cosmos](https://www.gocosmos.org/) framework for a project at the Duale Hochschule Gera-Eisenach.
 
 Venera can't directly run LLM inference and trying to port such tools to our platform is an impossible task. However,
 CosmosOS directly supports networking which we can use for remote inference. This is what this sub-project is about: proxying.
@@ -23,18 +23,17 @@ If you still want to host it, here is how I do it:
 - Publish as self-contained project and choose `linux-x64` as target.
 - Zip the contents of the export & upload to your server.
 - Unzip into a folder called `server/` and build a Docker image using this `Dockerfile` in the parent folder:
-```docker
+```dockerfile
 FROM debian:bookworm
 RUN apt update -y && apt install libicu-dev -y
 
 COPY server/. /opt/
-#ENTRYPOINT ["/bin/sh"]
 
 WORKDIR /opt
 ENTRYPOINT ["/opt/Sputnik.Proxy"]
 ```
 - Put into the same folder (where your `Dockerfile` is), this `docker-compose.yml`:
-```compose
+```yml
 services:
   sputnik:
     image: sputnik

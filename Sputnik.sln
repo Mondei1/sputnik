@@ -6,9 +6,6 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sputnik.Proxy", "Sputnik.Proxy\Sputnik.Proxy.csproj", "{5A6D4958-70BF-4D25-B292-B7BF02A8EC83}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Projektmappenelemente", "Projektmappenelemente", "{EFFB0920-BE05-487F-B7D1-68323901438A}"
-	ProjectSection(SolutionItems) = preProject
-		Sputnik.Proxy\README.md = Sputnik.Proxy\README.md
-	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
