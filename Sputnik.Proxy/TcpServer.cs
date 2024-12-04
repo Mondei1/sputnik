@@ -1,39 +1,40 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using Sputnik.Proxy.Models;
+using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace Sputnik.Proxy;
 
 public class TcpServer
 {
-    /// <summary>
-    /// This key is required to authenticate against the proxy. Not doing so would result in my credit card being
-    /// billed to personal insolvency.
-    /// </summary>
-    private static readonly byte[] PROXY_KEY = Encoding.ASCII.GetBytes("T6pSSaSjXU6uXJqMtrYSmyptAALqGmtk");
+    private static readonly byte[] EOF = [((byte)'E'), ((byte)'O'), ((byte)'F')];
 
     private TcpListener _listener;
     private OpenRouter _openRouter;
     private bool _isRunning;
+    private byte[] _psk;
 
     private readonly ConcurrentDictionary<TcpClient, Task> _clients = new();
     private readonly ConcurrentDictionary<TcpClient, List<GeneratedResponse>> _context = new();
     private readonly ConcurrentDictionary<TcpClient, string> _ids = new();
 
-    public TcpServer(string ipAddress, int port)
+    public TcpServer(string ipAddress, int port, byte[] psk)
     {
         _listener = new(IPAddress.Parse(ipAddress), port);
         _openRouter = new();
+        _psk = psk;
     }
 
     public void Start()
     {
         _listener.Start();
         _isRunning = true;
-        Console.WriteLine($"Server started ...");
+        Logging.LogInfo($"Server started on {_listener.LocalEndpoint} ...");
 
         Task.Run(() => AcceptClientsAsync());
     }
@@ -46,13 +47,13 @@ public class TcpServer
             {
                 var client = await _listener.AcceptTcpClientAsync();
 
-                byte[] sentKey = new byte[PROXY_KEY.Length];
+                byte[] sentKey = new byte[_psk.Length];
 
                 try
                 {
                     await client.GetStream().ReadExactlyAsync(sentKey, 0, 32).AsTask().WaitAsync(TimeSpan.FromMilliseconds(342));
 
-                    if (sentKey.SequenceEqual(PROXY_KEY))
+                    if (sentKey.SequenceEqual(_psk))
                     {
                         // Tell client to move on.
                         await client.GetStream().WriteAsync([1], 0, 1);
@@ -102,13 +103,13 @@ public class TcpServer
     private async Task HandleClientAsync(TcpClient client)
     {
         NetworkStream stream = client.GetStream();
-        byte[] buffer = new byte[8096];
+        byte[] rawBuffer = new byte[8096];
 
         try
         {
             while (_isRunning && client.Connected)
             {
-                int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+                int bytesRead = await stream.ReadAsync(rawBuffer, 0, rawBuffer.Length);
                 if (bytesRead == 0) break; // Client disconnected
 
                 if (!_ids.TryGetValue(client, out string? clientId))
@@ -117,12 +118,21 @@ public class TcpServer
                     break;
                 }
 
+                // Extract data by reading length int.
+                int dataLength = BitConverter.ToInt32(rawBuffer.Take(4).ToArray(), 0);
+                byte[] buffer = new byte[dataLength];
+                Array.Copy(rawBuffer, 4, buffer, 0, dataLength);
+
                 // Parse metadata
                 int talkingStyle = buffer[0];
+                int jsonDataLength = BitConverter.ToInt32(buffer.Skip(1).Take(4).ToArray(), 0);
+                string userInfoRaw = Encoding.ASCII.GetString(buffer, 5, jsonDataLength);
+                VeneraUserInfo veneraUserInfo = JsonConvert.DeserializeObject<VeneraUserInfo>(userInfoRaw)!;
 
                 // Convert data received from the client
-                string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-                Logging.LogReqest($"Received user prompt of {message.Length} characters.");
+                string message = string.Empty;
+                message = Encoding.ASCII.GetString(buffer, 5 + jsonDataLength, dataLength - (5 + jsonDataLength)).Replace("\0", "");
+                Logging.LogReqest($"Received prompt of {message.Length} characters.");
 
                 if (!_context.TryGetValue(client, out List<GeneratedResponse> context))
                 {
@@ -133,20 +143,27 @@ public class TcpServer
                 }
 
                 DateTime startTime = DateTime.Now;
-                string generatedResponse = "";
+                string generatedResponse = string.Empty;
 
-                await foreach (string str in _openRouter.Prompt((TalkingStyle)talkingStyle, message, context))
+                await foreach (string str in _openRouter.Prompt((TalkingStyle)talkingStyle, message, context, veneraUserInfo))
                 {
-                    string str1 = str
-                        .Replace("ä", "ae")
-                        .Replace("Ä", "Ae")
-                        .Replace("ö", "oe")
-                        .Replace("Ö", "Oe")
-                        .Replace("ü", "ue")
-                        .Replace("Ü", "Ue")
-                        .Replace("ß", "ss");
-                    generatedResponse += str1;
-                    byte[] response = Encoding.ASCII.GetBytes(str1);
+                    //string str1 = str;
+                    //.Replace("ä", "ae")
+                    //.Replace("Ä", "Ae")
+                    //.Replace("ö", "oe")
+                    //.Replace("Ö", "Oe")
+                    //.Replace("ü", "ue")
+                    //.Replace("Ü", "Ue")
+                    //.Replace("ß", "ss");
+
+                    // If our trim removed all characters, don't waste any packets.
+                    if (str.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    generatedResponse += str;
+                    byte[] response = Encoding.ASCII.GetBytes(str);
 
                     await stream.WriteAsync(response, 0, response.Length);
                 }
@@ -155,19 +172,27 @@ public class TcpServer
 
                 var cost = _openRouter.CalculatePrice(_openRouter.GetModelByStyle((TalkingStyle)talkingStyle));
 
-                Logging.LogResponse(($"Completed request in {duration.ToString(@"s\.fff")}s | {_openRouter.LastUsage.TotalTokens} tokens processed => ~{cost.Item1 + cost.Item2} €"));
+                Logging.LogResponse($"Completed request in {duration:s\\.fff}s | {_openRouter.LastUsage.TotalTokens} tokens processed => ~{cost.Item1 + cost.Item2} €");
+
+                // Will only be logged during development, not during production.
+                Logging.LogDebug($"Response from LLM: \"{generatedResponse}\"");
 
                 context.Add(new() { UserPrompt = message, Response = generatedResponse });
                 Logging.LogDebug($"Add {generatedResponse.Length + message.Length} characters to context.");
 
                 // Send null-terminator to end stream
-                await stream.WriteAsync([((byte)'E'), ((byte)'O'), ((byte)'F')], 0, 3);
+                await stream.WriteAsync(EOF, 0, 3);
 
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error handling client: {ex.Message}");
+            byte[] errorMessage = Encoding.ASCII.GetBytes($"Sputnik proxy encountered an {ex.GetType().ToString()} exception.");
+            await stream.WriteAsync([
+                .. errorMessage,
+                .. EOF
+            ], 0, errorMessage.Length + 3);
         }
         finally
         {

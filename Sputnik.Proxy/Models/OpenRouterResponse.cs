@@ -7,7 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Sputnik.Proxy
+namespace Sputnik.Proxy.Models
 {
     public class Response
     {

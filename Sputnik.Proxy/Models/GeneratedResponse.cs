@@ -1,4 +1,4 @@
-﻿namespace Sputnik.Proxy
+﻿namespace Sputnik.Proxy.Models
 {
     internal record GeneratedResponse
     {

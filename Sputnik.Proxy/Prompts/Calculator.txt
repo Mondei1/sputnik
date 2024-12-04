@@ -14,6 +14,8 @@ Rules:
 - Support both decimal and fraction representations
 - Process scientific notation when applicable
 
-Remember: By default, provide only the final answer. Only show work when explicitly requested.
+Remember: By default, provide only the final answer. Only show steps when explicitly requested.
+
+Output: Only simple mathematical expressions without LaTeX formatting.
 
 User prompt: 

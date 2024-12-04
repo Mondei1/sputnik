@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Sputnik.Proxy.Models;
 using System.Globalization;
 using System.Text;
 
@@ -82,13 +83,13 @@ internal class OpenRouter
             TalkingStyle.Kind => "mistralai/mistral-large-2411",
             TalkingStyle.Mixed => "mistralai/mistral-nemo",
             TalkingStyle.Rude => "mistralai/mistral-nemo",
-            TalkingStyle.Calc => "anthropic/claude-3.5-sonnet",
+            TalkingStyle.Calc => "openai/o1-mini",
             TalkingStyle.Raw => "anthropic/claude-3.5-haiku",
             _ => "mistralai/mistral-nemo"
         };
     }
 
-    public async IAsyncEnumerable<string> Prompt(TalkingStyle style, string prompt, List<GeneratedResponse>? prevContext)
+    public async IAsyncEnumerable<string> Prompt(TalkingStyle style, string prompt, List<GeneratedResponse>? prevContext, VeneraUserInfo userInfo)
     {
         string systemPrompt = File.ReadAllText($"Prompts{Path.DirectorySeparatorChar}SystemPrompt.txt")
             .Replace(Environment.NewLine, " ")
@@ -122,9 +123,13 @@ internal class OpenRouter
                 string calcStyle = File.ReadAllText($"Prompts{Path.DirectorySeparatorChar}Calculator.txt")
                     .Replace(Environment.NewLine, " ")
                     .Replace("\"", "\\\"");
-                systemPrompt = systemPrompt.Replace("%style%", calcStyle);
+                systemPrompt = calcStyle;
                 break;
         }
+
+        // Add user info to prompt
+        systemPrompt = systemPrompt.Replace("%name%", userInfo.Name).Replace(
+            "%username%", userInfo.Username);
 
         string jsonContext = string.Empty;
 
@@ -145,7 +150,7 @@ internal class OpenRouter
         string model = GetModelByStyle(style);
 
 
-        string jsonContent = "{\"stream\": true, \"max_tokens\": 4096, \"temperature\": 0.7, \"model\":\"" + model + "\",\"messages\":[" +
+        string jsonContent = "{\"stream\": true, \"max_tokens\": 512, \"model\":\"" + model + "\",\"messages\":[" +
                 "{\"role\":\"system\",\"content\":" + JsonConvert.ToString(systemPrompt) + "}," +
                 jsonContext +
                 "{\"role\":\"user\",\"content\":" + JsonConvert.ToString(prompt) + "}]}";
