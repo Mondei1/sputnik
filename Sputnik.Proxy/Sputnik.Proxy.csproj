@@ -13,10 +13,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Sputnik.Proxy.Crypto\Sputnik.Proxy.Shared.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Update="Prompts\Calculator.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
