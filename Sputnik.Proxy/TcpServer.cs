@@ -175,7 +175,7 @@ public class TcpServer
                 Logging.LogResponse($"Completed request in {duration:s\\.fff}s | {_openRouter.LastUsage.TotalTokens} tokens processed => ~{cost.Item1 + cost.Item2} €");
 
                 // Will only be logged during development, not during production.
-                Logging.LogDebug($"Response from LLM: \"{generatedResponse}\"");
+                //Logging.LogDebug($"Response from LLM: \"{generatedResponse}\"");
 
                 context.Add(new() { UserPrompt = message, Response = generatedResponse });
                 Logging.LogDebug($"Add {generatedResponse.Length + message.Length} characters to context.");

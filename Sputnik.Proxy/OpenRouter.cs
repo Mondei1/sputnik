@@ -156,7 +156,7 @@ internal class OpenRouter
                 "{\"role\":\"user\",\"content\":" + JsonConvert.ToString(prompt) + "}]}";
 
         //Logging.LogDebug($"Final request (style: {style}): {jsonContent}");
-        Logging.LogDebug($"Forward: \"{JsonConvert.DeserializeObject(jsonContent).ToString()}\"");
+        //Logging.LogDebug($"Forward: \"{JsonConvert.DeserializeObject(jsonContent).ToString()}\"");
 
         StringContent content = new StringContent(
             jsonContent,
