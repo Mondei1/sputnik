@@ -103,7 +103,7 @@ public class TcpServer
     private async Task HandleClientAsync(TcpClient client)
     {
         NetworkStream stream = client.GetStream();
-        byte[] rawBuffer = new byte[8096];
+        byte[] rawBuffer = new byte[8192];
 
         try
         {
@@ -163,7 +163,7 @@ public class TcpServer
                     }
 
                     generatedResponse += str;
-                    byte[] response = Encoding.ASCII.GetBytes(str);
+                    byte[] response = Encoding.UTF8.GetBytes(str);
 
                     await stream.WriteAsync(response, 0, response.Length);
                 }

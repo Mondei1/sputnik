@@ -83,7 +83,7 @@ internal class OpenRouter
             TalkingStyle.Kind => "mistralai/mistral-large-2411",
             TalkingStyle.Mixed => "mistralai/mistral-nemo",
             TalkingStyle.Rude => "mistralai/mistral-nemo",
-            TalkingStyle.Calc => "openai/o1-mini",
+            TalkingStyle.Calc => "google/gemini-pro-1.5",
             TalkingStyle.Raw => "anthropic/claude-3.5-haiku",
             _ => "mistralai/mistral-nemo"
         };

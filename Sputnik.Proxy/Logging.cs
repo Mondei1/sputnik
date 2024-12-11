@@ -35,6 +35,11 @@ internal static class Logging
 
     public static void LogDebug(string message)
     {
+        if (!Program.DEBUG)
+        {
+            return;
+        }
+
         Console.Write("[");
         Console.ForegroundColor = ConsoleColor.DarkBlue;
         Console.Write("Dbg");
@@ -44,11 +49,6 @@ internal static class Logging
 
     public static void LogWarn(string message)
     {
-        if (!Program.DEBUG)
-        {
-            return;
-        }
-
         Console.Write("[");
         Console.ForegroundColor = ConsoleColor.DarkYellow;
         Console.Write("Warn");
